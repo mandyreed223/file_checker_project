@@ -56,4 +56,6 @@ jobs:
           echo "Sending log event: $MESSAGE"
 
           aws logs put-log-events \
-            --log-group-n
+            --log-group-name "$LOG_GROUP_NAME" \
+            --log-stream-name "$LOG_STREAM_NAME" \
+            --log-events "[{\"timestamp\": ${TIMESTAMP_MS}, \"message\": \"${MESSAGE}\"}]"
