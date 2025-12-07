@@ -1,55 +1,32 @@
-name: Required Files Check (PR - Beta)
-
-on:
-  pull_request:
-    branches:
-      - main
-
-jobs:
-  required-files-check:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-
-      - name: Run required files check
-        id: file_check
-        run: |
-          python check_required_files.py
-
-      # Configure AWS credentials
-      - name: Configure AWS credentials
-        if: success()        # only if the Python check passed
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
       - name: Send audit log to CloudWatch (beta)
         if: success()
         env:
           LOG_GROUP_NAME: ${{ secrets.LOG_GROUP_NAME_BETA }}
         run: |
-          # Use current UTC time as log stream name
-          LOG_STREAM_NAME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          set -e
+
+          echo "Using log group: $LOG_GROUP_NAME"
+
+          # Get ISO-like timestamp, then replace ':' with '-'
+          RAW_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          LOG_STREAM_NAME=${RAW_TIMESTAMP//:/-}
           TIMESTAMP_MS=$(($(date -u +%s)*1000))
 
-          # Create log stream (will fail harmlessly if it already exists)
+          echo "Log stream name will be: $LOG_STREAM_NAME"
+
+          # Make sure the log group exists (create if needed)
+          aws logs create-log-group --log-group-name "$LOG_GROUP_NAME" || true
+
+          # Create the log stream for this run
           aws logs create-log-stream \
             --log-group-name "$LOG_GROUP_NAME" \
-            --log-stream-name "$LOG_STREAM_NAME" || true
+            --log-stream-name "$LOG_STREAM_NAME"
 
-          MESSAGE="workflow=${GITHUB_WORKFLOW}, sha=${GITHUB_SHA}, actor=${GITHUB_ACTOR}, log_stream=${LOG_STREAM_NAME}, time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          MESSAGE="workflow=${GITHUB_WORKFLOW}, sha=${GITHUB_SHA}, actor=${GITHUB_ACTOR}, log_stream=${LOG_STREAM_NAME}, time=${RAW_TIMESTAMP}"
+
+          echo "Sending log event: $MESSAGE"
 
           aws logs put-log-events \
             --log-group-name "$LOG_GROUP_NAME" \
             --log-stream-name "$LOG_STREAM_NAME" \
             --log-events "[{\"timestamp\": ${TIMESTAMP_MS}, \"message\": \"${MESSAGE}\"}]"
-
