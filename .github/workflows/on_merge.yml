@@ -1,0 +1,26 @@
+      - name: Send audit log to CloudWatch (prod)
+        if: success()
+        env:
+          LOG_GROUP_NAME: ${{ secrets.LOG_GROUP_NAME_PROD }}
+        run: |
+          set -e
+
+          echo "Using log group: $LOG_GROUP_NAME"
+
+          LOG_STREAM_NAME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          TIMESTAMP_MS=$(($(date -u +%s)*1000))
+
+          aws logs create-log-group --log-group-name "$LOG_GROUP_NAME" || true
+
+          aws logs create-log-stream \
+            --log-group-name "$LOG_GROUP_NAME" \
+            --log-stream-name "$LOG_STREAM_NAME"
+
+          MESSAGE="workflow=${GITHUB_WORKFLOW}, sha=${GITHUB_SHA}, actor=${GITHUB_ACTOR}, log_stream=${LOG_STREAM_NAME}, time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
+          echo "Sending log event: $MESSAGE"
+
+          aws logs put-log-events \
+            --log-group-name "$LOG_GROUP_NAME" \
+            --log-stream-name "$LOG_STREAM_NAME" \
+            --log-events "[{\"timestamp\": ${TIMESTAMP_MS}, \"message\": \"${MESSAGE}\"}]"
